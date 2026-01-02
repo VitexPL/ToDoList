@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8" />
+<title>Zaawansowana Lista Zadań</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+:root {
+  --kolor-tla: #1e1e1e;
+  --kolor-tekst: #ddd;
+  --kolor-karta: #2c2c2c;
+}
+body.jasny {
+  --kolor-tla: #f0f0f0;
+  --kolor-tekst: #333;
+  --kolor-karta: #fff;
+}
+body {
+  background: var(--kolor-tla);
+  color: var(--kolor-tekst);
+  font-family: Arial, sans-serif;
+  margin:0; padding:20px;
+}
+h1 { text-align:center; }
+#nowe-zadanie, #kontrola, #operacje {
+  display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-bottom:20px;
+}
+input, select { padding:8px; }
+button {
+  padding:6px 12px; border:none; cursor:pointer; border-radius:4px;
+}
+ul { list-style:none; padding:0; max-width:800px; margin:0 auto; }
+li {
+  background:var(--kolor-karta); padding:10px; margin-bottom:5px; border-radius:4px;
+}
+.zadanie-tekst { 
+  display:block; 
+  margin-bottom:5px; 
+}
+.ukonczone { text-decoration:line-through; color:#888; }
+.priorytet-1 { border-left:6px solid #e74c3c; }
+.priorytet-2 { border-left:6px solid #f1c40f; }
+.priorytet-3 { border-left:6px solid #2ecc71; }
+body.jasny .priorytet-1 { border-left-color:#c0392b; }
+body.jasny .priorytet-2 { border-left-color:#d4ac0d; }
+body.jasny .priorytet-3 { border-left-color:#27ae60; }
+.btn-usun { background:#dc3545; color:white; }
+.btn-edytuj { background:#007bff; color:white; }
+.btn-kolejnosc { background:#6c757d; color:white; }
+li button {
+  margin-right: 5px;
+  margin-top: 1px;
+}
+.form-edytuj {
+  background:rgba(0,0,0,0.3);
+  padding:10px;
+  border-radius:4px;
+  margin-top:10px;
+}
+.form-edytuj button {
+  margin-right: 5px;
+  margin-top: 4px;
+}
+</style>
+</head>
+<body>
+<h1>Lista Zadań</h1>
+
+<div id="nowe-zadanie">
+  <input type="text" id="zadanieInput" placeholder="Treść zadania..." />
+  <select id="priorytetInput">
+    <option value="1">Priorytet: Wysoki</option>
+    <option value="2">Priorytet: Średni</option>
+    <option value="3">Priorytet: Niski</option>
+  </select>
+  <input type="date" id="deadlineInput" />
+  <input type="time" id="godzinaInput" />
+  <button onclick="dodajZadanie()">Dodaj</button>
+</div>
+
+<div id="kontrola">
+  <select id="sortowanie" onchange="rysujListe()">
+    <option value="domyslne">Sortowanie: Domyślne</option>
+    <option value="priorytet">Sortuj wg priorytetu</option>
+    <option value="deadline">Sortuj wg terminu</option>
+  </select>
+  <select id="filtr" onchange="rysujListe()">
+    <option value="wszystkie">Pokaż wszystkie</option>
+    <option value="ukonczone">Tylko ukończone</option>
+    <option value="nieukonczone">Tylko nieukończone</option>
+  </select>
+</div>
+
+<div id="operacje">
+  <button onclick="eksportuj()">Eksportuj JSON</button>
+  <input type="file" id="importInput" style="display:none" onchange="importuj(event)" />
+  <button onclick="document.getElementById('importInput').click()">Importuj JSON</button>
+  <button onclick="przelaczMotyw()">Przełącz motyw</button>
+</div>
+
+<ul id="listaZadan"></ul>
+
+<script>
+let listaZadan=[];
+let pokazMotyw = localStorage.getItem('motyw') || 'ciemny';
+if(pokazMotyw==='jasny') document.body.classList.add('jasny');
+
+function zapiszDoLocalStorage() {
+  localStorage.setItem('zadania',JSON.stringify(listaZadan));
+}
+
+function wczytajZLocalStorage() {
+  const dane=localStorage.getItem('zadania');
+  if(dane) listaZadan=JSON.parse(dane);
+}
+
+function formatDataISOnaPL(iso) {
+  if(!iso) return '';
+  const [y,m,d]=iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+
+function rysujListe() {
+  const ul=document.getElementById('listaZadan');
+  ul.innerHTML='';
+  const filtr=document.getElementById('filtr').value;
+  let zadania=listaZadan.slice();
+
+  if(filtr==='ukonczone') zadania=zadania.filter(z=>z.ukonczone);
+  if(filtr==='nieukonczone') zadania=zadania.filter(z=>!z.ukonczone);
+
+  const sort=document.getElementById('sortowanie').value;
+  if(sort==='priorytet') zadania.sort((a,b)=>a.priorytet-b.priorytet);
+  if(sort==='deadline') zadania.sort((a,b)=>{
+    if(!a.deadline) return 1;
+    if(!b.deadline) return -1;
+    return new Date(a.deadline)-new Date(b.deadline);
+  });
+
+  zadania.forEach(zadanie=>{
+    const i=listaZadan.indexOf(zadanie);
+    const li=document.createElement('li');
+    li.classList.add(`priorytet-${zadanie.priorytet}`);
+    const t=document.createElement('div');
+    t.className='zadanie-tekst';
+    t.innerHTML=`
+      ${zadanie.tresc}
+      ${zadanie.pokazDateDodania ? `<br><small>Dodano: ${zadanie.data}</small>` : ''}
+      ${zadanie.deadline ? `<br><small>Termin: ${formatDataISOnaPL(zadanie.deadline)}</small>` : ''}
+      ${zadanie.godzina ? `<small> ${zadanie.godzina}</small>` : ''}
+      ${zadanie.pokazPriorytet ? `<br><small>Priorytet: ${["","Wysoki","Średni","Niski"][zadanie.priorytet]}</small>` : ''}
+    `;
+    if(zadanie.ukonczone) t.classList.add('ukonczone');
+    t.onclick=()=>{zadanie.ukonczone=!zadanie.ukonczone; zapiszDoLocalStorage(); rysujListe();};
+
+    const bEd=document.createElement('button');
+    bEd.textContent='Edytuj';
+    bEd.className='btn-edytuj';
+    bEd.onclick=()=>wyswietlFormEdytuj(i,li);
+
+    const bUs=document.createElement('button');
+    bUs.textContent='Usuń';
+    bUs.className='btn-usun';
+    bUs.onclick=()=>{listaZadan.splice(i,1); zapiszDoLocalStorage(); rysujListe();};
+
+    const bGora=document.createElement('button');
+    bGora.textContent='↑';
+    bGora.className='btn-kolejnosc';
+    bGora.onclick=()=>{if(i>0){[listaZadan[i-1],listaZadan[i]]=[listaZadan[i],listaZadan[i-1]]; zapiszDoLocalStorage(); rysujListe();}};
+
+    const bDol=document.createElement('button');
+    bDol.textContent='↓';
+    bDol.className='btn-kolejnosc';
+    bDol.onclick=()=>{if(i<listaZadan.length-1){[listaZadan[i],listaZadan[i+1]]=[listaZadan[i+1],listaZadan[i]]; zapiszDoLocalStorage(); rysujListe();}};
+
+    li.append(t,bEd,bUs,bGora,bDol);
+    ul.appendChild(li);
+  });
+}
+
+function wyswietlFormEdytuj(i,li) {
+  const istnieje = li.querySelector('.form-edytuj');
+  if (istnieje) {
+    istnieje.remove();
+    return; // zamknij jeśli już otwarte
+  }
+  const z=listaZadan[i];
+  const div=document.createElement('div');
+  div.className='form-edytuj';
+  div.innerHTML=`
+    <input type="text" id="eTresc${i}" value="${z.tresc}">
+    <select id="ePriorytet${i}">
+      <option value="1" ${z.priorytet==1?'selected':''}>Wysoki</option>
+      <option value="2" ${z.priorytet==2?'selected':''}>Średni</option>
+      <option value="3" ${z.priorytet==3?'selected':''}>Niski</option>
+    </select>
+    <input type="date" id="eDeadline${i}" value="${z.deadline||''}">
+    <input type="time" id="eGodzina${i}" value="${z.godzina||''}">
+    <br>
+    <label><input type="checkbox" id="ePokazDate${i}" ${z.pokazDateDodania?'checked':''}> Pokaż datę dodania</label>
+    <label><input type="checkbox" id="ePokazPriorytet${i}" ${z.pokazPriorytet?'checked':''}> Pokaż priorytet</label>
+    <br>
+    <button onclick="zapiszEdytuj(${i})">Zapisz</button>
+    <button onclick="rysujListe()">Anuluj</button>
+  `;
+  li.appendChild(div);
+}
+
+function zapiszEdytuj(i) {
+  const z=listaZadan[i];
+  z.tresc=document.getElementById(`eTresc${i}`).value.trim();
+  z.priorytet=parseInt(document.getElementById(`ePriorytet${i}`).value);
+  z.deadline=document.getElementById(`eDeadline${i}`).value;
+  z.godzina=document.getElementById(`eGodzina${i}`).value;
+  z.pokazDateDodania=document.getElementById(`ePokazDate${i}`).checked;
+  z.pokazPriorytet=document.getElementById(`ePokazPriorytet${i}`).checked;
+  zapiszDoLocalStorage();
+  rysujListe();
+}
+
+function dodajZadanie() {
+  const t=document.getElementById('zadanieInput').value.trim();
+  const p=parseInt(document.getElementById('priorytetInput').value);
+  const d=document.getElementById('deadlineInput').value;
+  const g=document.getElementById('godzinaInput').value;
+  if(!t){alert('Wpisz treść zadania!');return;}
+  listaZadan.push({
+    tresc:t,
+    data:new Date().toLocaleDateString('pl-PL'),
+    ukonczone:false,
+    priorytet:p,
+    deadline:d,
+    godzina:g,
+    pokazDateDodania:true,
+    pokazPriorytet:true
+  });
+  zapiszDoLocalStorage();
+  rysujListe();
+  document.getElementById('zadanieInput').value='';
+  document.getElementById('deadlineInput').value='';
+  document.getElementById('godzinaInput').value='';
+}
+
+function eksportuj() {
+  const dataStr='data:text/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(listaZadan));
+  const a=document.createElement('a');
+  a.href=dataStr;
+  a.download='zadania.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function importuj(e) {
+  const file=e.target.files[0];
+  if(!file)return;
+  const r=new FileReader();
+  r.onload=f=>{
+    try{
+      listaZadan=JSON.parse(f.target.result);
+      zapiszDoLocalStorage();
+      rysujListe();
+    }catch{alert('Niepoprawny plik JSON!');}
+  };
+  r.readAsText(file);
+}
+
+function przelaczMotyw() {
+  document.body.classList.toggle('jasny');
+  pokazMotyw=document.body.classList.contains('jasny')?'jasny':'ciemny';
+  localStorage.setItem('motyw',pokazMotyw);
+}
+
+wczytajZLocalStorage();
+rysujListe();
+</script>
+</body>
+</html>
